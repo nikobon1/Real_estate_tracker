@@ -42,11 +42,21 @@ export default function MapComponent() {
         if (map.current) return; // initialize map only once
         if (!mapContainer.current) return;
 
+        // 1. Get and sanitize token
+        let token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+        if (token.startsWith('pk.pk.')) {
+            console.warn("Found double 'pk.' prefix in token, fixing...");
+            token = token.substring(3);
+        }
+        mapboxgl.accessToken = token;
+
         if (!mapboxgl.accessToken) {
             console.error("Mapbox Access Token is missing");
             setErrorMsg("Mapbox Token is missing in .env.local");
             return;
         }
+
+        console.log("Initializing Mapbox with token:", token.substring(0, 8) + "...");
 
         try {
             map.current = new mapboxgl.Map({
