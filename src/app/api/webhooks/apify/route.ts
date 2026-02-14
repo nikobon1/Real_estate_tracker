@@ -5,6 +5,13 @@ import { IdealistaProperty } from '@/types/property';
 export async function POST(request: Request) {
     try {
         const body = await request.json();
+        console.log('Received webhook body:', JSON.stringify(body, null, 2));
+
+        // 0. Log to Supabase debug_logs
+        await supabase.from('debug_logs').insert({
+            event_type: 'webhook_received',
+            payload: body
+        });
 
         let items: IdealistaProperty[] = [];
 
