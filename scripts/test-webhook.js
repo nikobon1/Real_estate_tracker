@@ -1,4 +1,4 @@
-const https = require('http');
+const https = require('https');
 
 const data = JSON.stringify({
     id: "TEST_999",
@@ -15,8 +15,8 @@ const data = JSON.stringify({
 });
 
 const options = {
-    hostname: '127.0.0.1', // Force IPv4
-    port: 3000,
+    hostname: 'realestatetracker.vercel.app',
+    port: 443,
     path: '/api/webhooks/apify',
     method: 'POST',
     headers: {

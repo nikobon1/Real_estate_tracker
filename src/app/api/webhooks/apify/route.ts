@@ -43,12 +43,13 @@ export async function POST(request: Request) {
         const propertiesToUpsert = items.map(item => {
             // Helper to get nested or alternative fields
             const getField = (...keys: string[]) => {
+                const itemAny = item as any;
                 for (const key of keys) {
-                    if (item[key] !== undefined && item[key] !== null) return item[key];
+                    if (itemAny[key] !== undefined && itemAny[key] !== null) return itemAny[key];
                     // Support basic dot notation for one level deep (e.g. "basicInfo.title")
                     if (key.includes('.')) {
                         const [parent, child] = key.split('.');
-                        if (item[parent] && item[parent][child] !== undefined) return item[parent][child];
+                        if (itemAny[parent] && itemAny[parent][child] !== undefined) return itemAny[parent][child];
                     }
                 }
                 return null;
