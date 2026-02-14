@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 // Ensure you set your token in .env.local
 // NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Ijoi...
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+
 
 export default function MapComponent() {
     const mapContainer = useRef<HTMLDivElement>(null);
