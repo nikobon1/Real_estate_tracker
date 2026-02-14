@@ -61,7 +61,7 @@ export default function MapComponent() {
 
             map.current.on('error', (e) => {
                 console.error("Mapbox error:", e);
-                setErrorMsg(`Map Error: ${e.error?.message || "Unknown error"}`);
+                setErrorMsg(`Map Error: ${e.error?.message || JSON.stringify(e)}`);
             });
 
             map.current.on('load', () => {
@@ -229,10 +229,10 @@ export default function MapComponent() {
     return (
         <div className="relative w-full h-full">
             <div className="absolute top-0 left-0 m-4 p-2 bg-black/70 text-white backdrop-blur rounded shadow z-10 font-mono text-xs">
-                Loaded: {properties.length}
+                Loaded: {properties.length} | Token: {mapboxgl.accessToken ? mapboxgl.accessToken.substring(0, 8) + '...' : 'MISSING'}
             </div>
             {errorMsg && (
-                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white p-4 rounded shadow-lg z-50">
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white p-4 rounded shadow-lg z-50 max-w-sm break-words">
                     {errorMsg}
                 </div>
             )}
