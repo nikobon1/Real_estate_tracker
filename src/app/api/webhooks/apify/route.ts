@@ -30,22 +30,43 @@ export async function POST(request: Request) {
             return NextResponse.json({ message: 'No items found to process' }, { status: 200 });
         }
 
-        const propertiesToUpsert = items.map(item => ({
-            id: item.id || `unknown_${Math.random()}`, // Fallback if ID is missing
-            title: item.title || 'Untitled',
-            price: item.price || 0,
-            currency: item.currency || 'EUR',
-            size_m2: item.size || 0,
-            rooms: item.rooms || 0,
-            bathrooms: item.bathrooms || 0,
-            location: (item.latitude && item.longitude) ? `POINT(${item.longitude} ${item.latitude})` : null,
-            address: item.address || null,
-            province: item.province || null,
-            city: item.city || null,
-            url: item.url || '',
-            image_url: item.thumbnail || null,
-            last_seen: new Date().toISOString(),
-        }));
+        // Log the first item to see structure in Vercel logs
+        console.log('First item sample:', JSON.stringify(items[0], null, 2));
+
+        const propertiesToUpsert = items.map(item => {
+            // Helper to get nested or alternative fields
+            const getField = (...keys: string[]) => {
+                for (const key of keys) {
+                    if (item[key] !== undefined && item[key] !== null) return item[key];
+                    // Support basic dot notation for one level deep (e.g. "basicInfo.title")
+                    if (key.includes('.')) {
+                        const [parent, child] = key.split('.');
+                        if (item[parent] && item[parent][child] !== undefined) return item[parent][child];
+                    }
+                }
+                return null;
+            };
+
+            const lat = getField('latitude', 'address.location.latitude', 'point.lat');
+            const lng = getField('longitude', 'address.location.longitude', 'point.lng');
+
+            return {
+                id: String(getField('id', 'adid', 'propertyCode') || `unknown_${Math.random()}`),
+                title: getField('title', 'suggestedTexts.title', 'basicInfo.title') || 'Untitled Property',
+                price: Number(getField('price', 'priceInfo.price.amount')) || 0,
+                currency: getField('currency', 'priceInfo.price.currencySuffix') || 'EUR',
+                size_m2: Number(getField('size', 'builtArea', 'basicInfo.builtArea')) || 0,
+                rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
+                bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
+                location: (lat && lng) ? `POINT(${lng} ${lat})` : null,
+                address: getField('address', 'address.userAddress') || null,
+                province: getField('province', 'address.location.level2') || null,
+                city: getField('city', 'address.location.level4') || null,
+                url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
+                image_url: getField('thumbnail', 'mainImage.url', 'images.0.url') || null,
+                last_seen: new Date().toISOString(),
+            };
+        });
 
         // Filter out invalid items (e.g. missing price or ID) if necessary
         const validProperties = propertiesToUpsert.filter(p => p.price > 0 && p.url);
