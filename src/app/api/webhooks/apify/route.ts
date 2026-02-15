@@ -63,11 +63,16 @@ export async function POST(request: Request) {
                 return null;
             };
 
+            const itemAny = item as any;
             const lat = getField('latitude', 'point.lat', 'address.location.latitude');
             const lng = getField('longitude', 'point.lng', 'address.location.longitude');
 
+            // Log resolving of lat/lng for debugging
+            if (items.indexOf(item) === 0) {
+                console.log('Resolved coordinates for first item:', { lat, lng, rawLat: itemAny.latitude, rawLng: itemAny.longitude, address: itemAny.address });
+            }
+
             // Image handling: Try multimedia.images[0].url (Idealista structure)
-            const itemAny = item as any;
             let imageUrl = null;
             if (itemAny.multimedia && itemAny.multimedia.images && Array.isArray(itemAny.multimedia.images) && itemAny.multimedia.images.length > 0) {
                 imageUrl = itemAny.multimedia.images[0].url;
