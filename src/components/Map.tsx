@@ -29,7 +29,13 @@ export default function MapComponent() {
         const fetchProperties = async () => {
             const { data, error } = await supabase
                 .from('properties')
-                .select('*');
+                .select(`
+                    *,
+                    price_history (
+                        price,
+                        recorded_at
+                    )
+                `);
 
             if (error) {
                 console.error("Error fetching properties:", error);
@@ -120,7 +126,13 @@ export default function MapComponent() {
                     source: 'properties',
                     filter: ['!', ['has', 'point_count']],
                     paint: {
-                        'circle-color': '#4ade80',
+                        'circle-color': [
+                            'case',
+                            ['==', ['get', 'size_m2'], 0], '#9ca3af',   // Grey (Unknown size)
+                            ['<', ['get', 'price_per_m2'], 3000], '#22c55e', // Green (Cheap < 3k)
+                            ['<', ['get', 'price_per_m2'], 5000], '#eab308', // Yellow (Medium 3k-5k)
+                            '#ef4444' // Red (Expensive > 5k)
+                        ],
                         'circle-radius': 8,
                         'circle-stroke-width': 1,
                         'circle-stroke-color': '#fff'
@@ -157,44 +169,100 @@ export default function MapComponent() {
                     // Price formatting
                     const priceFormatted = new Intl.NumberFormat('de-DE').format(props.price);
 
-                    // Simple Chart Placeholder
-                    // We can't easily render React components inside Mapbox popup HTML string without extra lib
-                    // So we use standard HTML/CSS.
-                    const chartPlaceholder = `
-                        <div class="mt-2 pt-2 border-t border-gray-200">
-                            <h4 class="text-xs font-semibold text-gray-500 mb-1">Price History</h4>
-                            <div class="w-full h-16 bg-gray-50 flex items-end justify-between px-1 rounded relative">
-                                <!-- Mock Bars for "Simple Chart" -->
-                                <div class="w-1/5 bg-green-200 h-1/2 rounded-t" title="Past"></div>
-                                <div class="w-1/5 bg-green-300 h-2/3 rounded-t" title="Past"></div>
-                                <div class="w-1/5 bg-green-400 h-3/4 rounded-t" title="Past"></div>
-                                <div class="w-1/5 bg-green-500 h-full rounded-t" title="Current"></div>
+                    // Logic for Size display
+                    const size = props.size_m2;
+                    const sizeDisplay = size > 0 ? `${size} m²` : `<span class="text-gray-400 italic">N/A</span>`;
+                    const pricePerM2Display = size > 0
+                        ? `${(props.price / size).toFixed(0)} ${props.currency}/m²`
+                        : ``;
+
+                    // --- GENERATE PRICE HISTORY CHART ---
+                    let chartHtml = '';
+                    let history = [];
+                    try {
+                        history = JSON.parse(props.price_history_json || '[]');
+                    } catch (e) {
+                        console.error("Error parsing price history", e);
+                    }
+
+                    // Always add current price as the last point if not present (or simply use history + current)
+                    // For now, let's assume history contains all we need. If empty, we use current price.
+                    if (history.length === 0) {
+                        history.push({ price: props.price, recorded_at: new Date().toISOString() });
+                    }
+
+                    // Sort by date
+                    history.sort((a: any, b: any) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
+
+                    // Find Min/Max for dynamic scaling
+                    const prices = history.map((h: any) => h.price);
+                    const minPrice = Math.min(...prices);
+                    const maxPrice = Math.max(...prices);
+                    const range = maxPrice - minPrice;
+                    // If flat line (range 0), use a default height of 50%.
+
+                    const bars = history.map((h: any, index: number) => {
+                        const date = new Date(h.recorded_at);
+                        const dateStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+                        const priceStr = new Intl.NumberFormat('de-DE', { notation: "compact", maximumFractionDigits: 1 }).format(h.price);
+
+                        // Calculate height percentage. 
+                        // Baseline 20% height + 80% * (val - min) / range
+                        let heightPercent = 50;
+                        if (range > 0) {
+                            heightPercent = 20 + 70 * ((h.price - minPrice) / range);
+                        }
+
+                        // Color logic: Green = current/latest, Gray = past
+                        const isLast = index === history.length - 1;
+                        const barColorClass = isLast ? 'bg-green-500' : 'bg-gray-300';
+
+                        return `
+                            <div class="flex flex-col items-center justify-end h-full w-full group relative">
+                                <span class="text-[10px] text-gray-600 mb-1 font-mono bg-white/80 px-1 rounded opacity-0 group-hover:opacity-100 absolute bottom-full transition-opacity whitespace-nowrap z-10 shadow-sm border border-gray-100 pointer-events-none">
+                                    ${new Intl.NumberFormat('de-DE').format(h.price)} €
+                                </span>
+                                <span class="text-[9px] text-gray-500 mb-0.5 leading-none">${priceStr}</span>
+                                <div class="${barColorClass} w-3/4 rounded-t transition-all duration-300 hover:bg-green-600" style="height: ${heightPercent}%"></div>
+                                <span class="text-[9px] text-gray-400 mt-1 leading-none text-center transform -rotate-0">${dateStr}</span>
                             </div>
-                            <div class="flex justify-between text-[10px] text-gray-400 mt-1">
-                                <span>3m ago</span>
-                                <span>Now</span>
+                        `;
+                    }).join('');
+
+
+                    chartHtml = `
+                        <div class="mt-3 pt-3 border-t border-gray-100">
+                            <h4 class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Price History</h4>
+                            <div class="w-full h-24 bg-slate-50 flex items-end justify-between px-2 pb-1 rounded border border-slate-100 gap-1 overflow-x-auto scrollbar-thin">
+                                ${bars}
                             </div>
                         </div>
                     `;
 
-                    new mapboxgl.Popup()
+                    new mapboxgl.Popup({
+                        maxWidth: '400px', // Wider popup
+                        closeButton: true,
+                        closeOnClick: true
+                    })
                         .setLngLat(coordinates)
                         .setHTML(`
-                            <div class="p-0 max-w-xs text-black w-64">
-                                ${props.image_url ? `<div class="relative w-full h-32"><img src="${props.image_url}" class="w-full h-full object-cover rounded-t" /></div>` : ''}
-                                <div class="p-3">
-                                    <h3 class="font-bold text-sm mb-1 leading-tight line-clamp-2">${props.title}</h3>
-                                    <div class="text-xl font-bold text-green-600 mb-1">
+                            <div class="p-0 text-black w-[300px] sm:w-[340px]">
+                                ${props.image_url ? `<div class="relative w-full h-40"><img src="${props.image_url}" class="w-full h-full object-cover rounded-t" /></div>` : ''}
+                                <div class="p-4">
+                                    <h3 class="font-bold text-base mb-1 leading-snug line-clamp-2 text-gray-800">${props.title}</h3>
+                                    <div class="text-2xl font-bold text-green-600 mb-2">
                                         ${priceFormatted} ${props.currency}
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
-                                        <div><span class="font-semibold text-gray-700">${props.size_m2}</span> m²</div>
-                                        <div><span class="font-semibold text-gray-700">${(props.price / props.size_m2).toFixed(0)}</span> ${props.currency}/m²</div>
-                                        <div><span class="font-semibold text-gray-700">${props.rooms || '?'}</span> Rooms</div>
-                                        <div><span class="font-semibold text-gray-700">${props.bathrooms || '?'}</span> Baths</div>
+                                    <div class="grid grid-cols-2 gap-y-2 gap-x-4 text-xs text-gray-600 mb-2">
+                                        <div class="flex items-center"><span class="font-bold mr-1 text-gray-800">${sizeDisplay}</span></div>
+                                        <div class="flex items-center">${pricePerM2Display ? `<span class="font-medium bg-gray-100 px-1 rounded">${pricePerM2Display}</span>` : ''}</div>
+                                        <div class="flex items-center"><span class="font-bold mr-1 text-gray-800">${props.rooms || '--'}</span> Rooms</div>
+                                        <div class="flex items-center"><span class="font-bold mr-1 text-gray-800">${props.bathrooms || '--'}</span> Baths</div>
                                     </div>
-                                    ${chartPlaceholder}
-                                    <a href="${props.url}" target="_blank" class="mt-3 block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs py-2 px-3 rounded transition-colors">
+                                    
+                                    ${chartHtml}
+
+                                    <a href="${props.url}" target="_blank" class="mt-4 block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-2.5 px-4 rounded-md transition-colors shadow-sm hover:shadow">
                                         View on Idealista
                                     </a>
                                 </div>
@@ -261,10 +329,13 @@ export default function MapComponent() {
                         price: p.price,
                         currency: p.currency,
                         size_m2: p.size_m2,
+                        price_per_m2: p.size_m2 > 0 ? p.price / p.size_m2 : 0,
                         rooms: p.rooms,
                         bathrooms: p.bathrooms,
                         url: p.url,
-                        image_url: p.image_url
+                        image_url: p.image_url,
+                        // Serialize price history to pass it through Mapbox properties (which only support scalar types efficiently, but text is fine)
+                        price_history_json: JSON.stringify(p.price_history || [])
                     }
                 };
             })
@@ -292,6 +363,17 @@ export default function MapComponent() {
                     duration: 1000 // smooth animation
                 });
             }
+        }
+
+        // Force update layer style to ensure color coding applies even if map init didn't re-run (HMR fix)
+        if (map.current.getLayer('unclustered-point')) {
+            map.current.setPaintProperty('unclustered-point', 'circle-color', [
+                'case',
+                ['==', ['get', 'size_m2'], 0], '#9ca3af',   // Grey (Unknown size)
+                ['<', ['get', 'price_per_m2'], 3000], '#22c55e', // Green (Cheap < 3k)
+                ['<', ['get', 'price_per_m2'], 5000], '#eab308', // Yellow (Medium 3k-5k)
+                '#ef4444' // Red (Expensive > 5k)
+            ]);
         }
 
     }, [properties, mapLoaded]);
