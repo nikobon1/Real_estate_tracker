@@ -82,72 +82,70 @@ export async function POST(request: Request) {
                 imageUrl = getField('thumbnail', 'mainImage.url');
             }
 
+            // Calculate derived values before returning object
+            const price = Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount')) || 0;
+            const priceByArea = Number(getField('priceByArea', 'priceInfo.priceByArea', 'detail.priceByArea')) || 0;
+            let sizeM2 = Number(getField('size', 'builtArea', 'basicInfo.builtArea', 'moreCharacteristics.constructedArea', 'moreCharacteristics.usableArea')) || 0;
+
+            // Fallback: Calculate size from price and price/m2 if size is missing
+            if (sizeM2 === 0 && price > 0 && priceByArea > 0) {
+                sizeM2 = Math.round(price / priceByArea);
+            }
+
             return {
                 id: String(getField('adid', 'id', 'propertyCode') || `unknown_${Math.random()}`),
                 title: getField('suggestedTexts.title', 'title', 'basicInfo.title') || 'Untitled Property',
-                const price = Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount')) || 0;
-                const priceByArea = Number(getField('priceByArea', 'priceInfo.priceByArea', 'detail.priceByArea')) || 0;
-                let sizeM2 = Number(getField('size', 'builtArea', 'basicInfo.builtArea', 'moreCharacteristics.constructedArea', 'moreCharacteristics.usableArea')) || 0;
+                price: price,
+                currency: getField('priceInfo.currencySuffix', 'currency') || 'EUR',
+                size_m2: sizeM2,
+                rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
+                bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
+                location: (lat && lng) ? `POINT(${lng} ${lat})` : null,
+                address: getField('address', 'address.userAddress', 'ubication.title', 'address.title') || null,
+                province: getField('province', 'address.location.level2', 'ubication.administrativeAreaLevel2') || null,
+                city: getField('municipality', 'city', 'address.location.level4') || null,
+                url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
+                image_url: imageUrl,
+                last_seen: new Date().toISOString(),
+            };
+        });
 
-                // Fallback: Calculate size from price and price/m2 if size is missing
-                if(sizeM2 === 0 && price > 0 && priceByArea > 0) {
-                    sizeM2 = Math.round(price / priceByArea);
-    }
+        // Filter out invalid items (e.g. missing price or ID) if necessary
+        const validProperties = propertiesToUpsert.filter(p => p.price > 0 && p.url);
 
-            return {
-        id: String(getField('adid', 'id', 'propertyCode') || `unknown_${Math.random()}`),
-        title: getField('suggestedTexts.title', 'title', 'basicInfo.title') || 'Untitled Property',
-        price: price,
-        currency: getField('priceInfo.currencySuffix', 'currency') || 'EUR',
-        size_m2: sizeM2,
-        rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
-        bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
-        location: (lat && lng) ? `POINT(${lng} ${lat})` : null,
-        address: getField('address', 'address.userAddress', 'ubication.title', 'address.title') || null,
-        province: getField('province', 'address.location.level2', 'ubication.administrativeAreaLevel2') || null,
-        city: getField('municipality', 'city', 'address.location.level4') || null,
-        url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
-        image_url: imageUrl,
-        last_seen: new Date().toISOString(),
-    };
-});
+        if (validProperties.length === 0) {
+            return NextResponse.json({ message: 'No valid properties to insert' }, { status: 200 });
+        }
 
-// Filter out invalid items (e.g. missing price or ID) if necessary
-const validProperties = propertiesToUpsert.filter(p => p.price > 0 && p.url);
+        // 1. Upsert Properties
+        const { error: propError } = await supabase
+            .from('properties')
+            .upsert(validProperties, { onConflict: 'id' });
 
-if (validProperties.length === 0) {
-    return NextResponse.json({ message: 'No valid properties to insert' }, { status: 200 });
-}
+        if (propError) {
+            console.error('Error inserting properties:', propError);
+            return NextResponse.json({ error: propError.message }, { status: 500 });
+        }
 
-// 1. Upsert Properties
-const { error: propError } = await supabase
-    .from('properties')
-    .upsert(validProperties, { onConflict: 'id' });
+        // 2. Insert Price History
+        const historyRecords = validProperties.map(item => ({
+            property_id: item.id,
+            price: item.price,
+            recorded_at: new Date().toISOString(),
+        }));
 
-if (propError) {
-    console.error('Error inserting properties:', propError);
-    return NextResponse.json({ error: propError.message }, { status: 500 });
-}
+        const { error: histError } = await supabase
+            .from('price_history')
+            .insert(historyRecords);
 
-// 2. Insert Price History
-const historyRecords = validProperties.map(item => ({
-    property_id: item.id,
-    price: item.price,
-    recorded_at: new Date().toISOString(),
-}));
+        if (histError) {
+            console.error('Error inserting history:', histError);
+        }
 
-const { error: histError } = await supabase
-    .from('price_history')
-    .insert(historyRecords);
-
-if (histError) {
-    console.error('Error inserting history:', histError);
-}
-
-return NextResponse.json({ message: 'Success', count: validProperties.length }, { status: 200 });
+        return NextResponse.json({ message: 'Success', count: validProperties.length }, { status: 200 });
 
     } catch (error) {
-    console.error('Webhook error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-}
+        console.error('Webhook error:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
 }
