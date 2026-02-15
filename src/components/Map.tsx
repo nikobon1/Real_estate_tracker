@@ -239,6 +239,20 @@ export default function MapComponent() {
                 features: features as any
             });
             console.log("Updated map with features:", features.length);
+
+            // Auto-zoom to fit all points
+            if (features.length > 0) {
+                const bounds = new mapboxgl.LngLatBounds();
+                features.forEach((feature: any) => {
+                    bounds.extend(feature.geometry.coordinates);
+                });
+
+                map.current.fitBounds(bounds, {
+                    padding: 50,
+                    maxZoom: 14,
+                    duration: 1000 // smooth animation
+                });
+            }
         }
 
     }, [properties]);
