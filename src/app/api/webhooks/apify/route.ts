@@ -67,9 +67,11 @@ export async function POST(request: Request) {
             const lat = getField('latitude', 'point.lat', 'address.location.latitude', 'ubication.latitude');
             const lng = getField('longitude', 'point.lng', 'address.location.longitude', 'ubication.longitude');
 
-            // Log resolving of lat/lng for debugging
-            if (items.indexOf(item) === 0) {
-                console.log('Resolved coordinates for first item:', { lat, lng, rawLat: itemAny.latitude, rawLng: itemAny.longitude, address: itemAny.address });
+            // Log resolving of lat/lng for debugging (flattened for readability)
+            if (items.indexOf(item) < 5) {
+                console.log(`[DEBUG ITEM ${items.indexOf(item)}] ID: ${itemAny.adid || itemAny.id}`);
+                console.log(`[DEBUG ITEM ${items.indexOf(item)}] Raw Ubication:`, JSON.stringify(itemAny.ubication));
+                console.log(`[DEBUG ITEM ${items.indexOf(item)}] Extracted: lat=${lat}, lng=${lng}`);
             }
 
             // Image handling: Try multimedia.images[0].url (Idealista structure)
