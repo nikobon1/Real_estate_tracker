@@ -37,8 +37,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ message: 'No items found to process' }, { status: 200 });
         }
 
-        // Log the first item to see structure in Vercel logs
-        console.log('First item sample:', JSON.stringify(items[0], null, 2));
+        // Log the first item sample to Supabase debug_logs so we can see the structure
+        if (items.length > 0) {
+            console.log('First item sample:', JSON.stringify(items[0], null, 2));
+            await supabase.from('debug_logs').insert({
+                event_type: 'dataset_item_sample',
+                payload: items[0]
+            });
+        }
 
         const propertiesToUpsert = items.map(item => {
             // Helper to get nested or alternative fields
