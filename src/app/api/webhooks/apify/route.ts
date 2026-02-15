@@ -48,36 +48,47 @@ export async function POST(request: Request) {
 
         const propertiesToUpsert = items.map(item => {
             // Helper to get nested or alternative fields
+            // Mapping based on actual Apify dataset structure (idealista-scraper)
             const getField = (...keys: string[]) => {
                 const itemAny = item as any;
                 for (const key of keys) {
                     if (itemAny[key] !== undefined && itemAny[key] !== null) return itemAny[key];
                     // Support basic dot notation for one level deep (e.g. "basicInfo.title")
                     if (key.includes('.')) {
-                        const [parent, child] = key.split('.');
+                        const [parent, child, subchild] = key.split('.');
+                        if (subchild && itemAny[parent]?.[child]?.[subchild] !== undefined) return itemAny[parent][child][subchild];
                         if (itemAny[parent] && itemAny[parent][child] !== undefined) return itemAny[parent][child];
                     }
                 }
                 return null;
             };
 
-            const lat = getField('latitude', 'address.location.latitude', 'point.lat');
-            const lng = getField('longitude', 'address.location.longitude', 'point.lng');
+            const lat = getField('latitude', 'point.lat', 'address.location.latitude');
+            const lng = getField('longitude', 'point.lng', 'address.location.longitude');
+
+            // Image handling: Try multimedia.images[0].url (Idealista structure)
+            const itemAny = item as any;
+            let imageUrl = null;
+            if (itemAny.multimedia && itemAny.multimedia.images && Array.isArray(itemAny.multimedia.images) && itemAny.multimedia.images.length > 0) {
+                imageUrl = itemAny.multimedia.images[0].url;
+            } else {
+                imageUrl = getField('thumbnail', 'mainImage.url');
+            }
 
             return {
-                id: String(getField('id', 'adid', 'propertyCode') || `unknown_${Math.random()}`),
-                title: getField('title', 'suggestedTexts.title', 'basicInfo.title') || 'Untitled Property',
-                price: Number(getField('price', 'priceInfo.price.amount')) || 0,
-                currency: getField('currency', 'priceInfo.price.currencySuffix') || 'EUR',
+                id: String(getField('adid', 'id', 'propertyCode') || `unknown_${Math.random()}`),
+                title: getField('suggestedTexts.title', 'title', 'basicInfo.title') || 'Untitled Property',
+                price: Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount')) || 0,
+                currency: getField('priceInfo.currencySuffix', 'currency') || 'EUR',
                 size_m2: Number(getField('size', 'builtArea', 'basicInfo.builtArea')) || 0,
                 rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
                 bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
                 location: (lat && lng) ? `POINT(${lng} ${lat})` : null,
                 address: getField('address', 'address.userAddress') || null,
                 province: getField('province', 'address.location.level2') || null,
-                city: getField('city', 'address.location.level4') || null,
+                city: getField('municipality', 'city', 'address.location.level4') || null,
                 url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
-                image_url: getField('thumbnail', 'mainImage.url', 'images.0.url') || null,
+                image_url: imageUrl,
                 last_seen: new Date().toISOString(),
             };
         });
