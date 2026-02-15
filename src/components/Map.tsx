@@ -60,7 +60,7 @@ export default function MapComponent() {
         try {
             map.current = new mapboxgl.Map({
                 container: mapContainer.current,
-                style: 'mapbox://styles/mapbox/dark-v11',
+                style: 'mapbox://styles/mapbox/streets-v11', // changed to standard style for reliability
                 center: [lng, lat],
                 zoom: zoom,
                 attributionControl: false
@@ -264,7 +264,7 @@ export default function MapComponent() {
     const isTokenMissing = !mapboxgl.accessToken;
 
     return (
-        <div className="relative w-full h-full">
+        <div className="relative w-full h-screen">
             <div className="absolute top-0 left-0 m-4 p-2 bg-black/70 text-white backdrop-blur rounded shadow z-10 font-mono text-xs">
                 Loaded: {properties.length} | Token: {mapboxgl.accessToken ? mapboxgl.accessToken.substring(0, 8) + '...' : 'MISSING'}
             </div>
