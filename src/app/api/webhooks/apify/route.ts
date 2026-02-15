@@ -64,8 +64,8 @@ export async function POST(request: Request) {
             };
 
             const itemAny = item as any;
-            const lat = getField('latitude', 'point.lat', 'address.location.latitude');
-            const lng = getField('longitude', 'point.lng', 'address.location.longitude');
+            const lat = getField('latitude', 'point.lat', 'address.location.latitude', 'ubication.latitude');
+            const lng = getField('longitude', 'point.lng', 'address.location.longitude', 'ubication.longitude');
 
             // Log resolving of lat/lng for debugging
             if (items.indexOf(item) === 0) {
@@ -89,8 +89,8 @@ export async function POST(request: Request) {
                 rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
                 bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
                 location: (lat && lng) ? `POINT(${lng} ${lat})` : null,
-                address: getField('address', 'address.userAddress') || null,
-                province: getField('province', 'address.location.level2') || null,
+                address: getField('address', 'address.userAddress', 'ubication.title', 'address.title') || null,
+                province: getField('province', 'address.location.level2', 'ubication.administrativeAreaLevel2') || null,
                 city: getField('municipality', 'city', 'address.location.level4') || null,
                 url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
                 image_url: imageUrl,
