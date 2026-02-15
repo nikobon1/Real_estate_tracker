@@ -87,7 +87,7 @@ export async function POST(request: Request) {
                 title: getField('suggestedTexts.title', 'title', 'basicInfo.title') || 'Untitled Property',
                 price: Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount')) || 0,
                 currency: getField('priceInfo.currencySuffix', 'currency') || 'EUR',
-                size_m2: Number(getField('size', 'builtArea', 'basicInfo.builtArea')) || 0,
+                size_m2: Number(getField('size', 'builtArea', 'basicInfo.builtArea', 'moreCharacteristics.constructedArea', 'moreCharacteristics.usableArea')) || 0,
                 rooms: Number(getField('rooms', 'basicInfo.rooms')) || 0,
                 bathrooms: Number(getField('bathrooms', 'basicInfo.bathrooms')) || 0,
                 location: (lat && lng) ? `POINT(${lng} ${lat})` : null,

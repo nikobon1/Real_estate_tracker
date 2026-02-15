@@ -22,6 +22,8 @@ export default function MapComponent() {
     const [properties, setProperties] = useState<any[]>([]);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+    const [mapLoaded, setMapLoaded] = useState(false);
+
     // 1. Fetch properties from Supabase
     useEffect(() => {
         const fetchProperties = async () => {
@@ -75,6 +77,7 @@ export default function MapComponent() {
 
             map.current.on('load', () => {
                 if (!map.current) return;
+                setMapLoaded(true); // Signal that map is ready
 
                 // Add empty source first
                 map.current.addSource('properties', {
@@ -151,21 +154,50 @@ export default function MapComponent() {
                         coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
                     }
 
+                    // Price formatting
+                    const priceFormatted = new Intl.NumberFormat('de-DE').format(props.price);
+
+                    // Simple Chart Placeholder
+                    // We can't easily render React components inside Mapbox popup HTML string without extra lib
+                    // So we use standard HTML/CSS.
+                    const chartPlaceholder = `
+                        <div class="mt-2 pt-2 border-t border-gray-200">
+                            <h4 class="text-xs font-semibold text-gray-500 mb-1">Price History</h4>
+                            <div class="w-full h-16 bg-gray-50 flex items-end justify-between px-1 rounded relative">
+                                <!-- Mock Bars for "Simple Chart" -->
+                                <div class="w-1/5 bg-green-200 h-1/2 rounded-t" title="Past"></div>
+                                <div class="w-1/5 bg-green-300 h-2/3 rounded-t" title="Past"></div>
+                                <div class="w-1/5 bg-green-400 h-3/4 rounded-t" title="Past"></div>
+                                <div class="w-1/5 bg-green-500 h-full rounded-t" title="Current"></div>
+                            </div>
+                            <div class="flex justify-between text-[10px] text-gray-400 mt-1">
+                                <span>3m ago</span>
+                                <span>Now</span>
+                            </div>
+                        </div>
+                    `;
+
                     new mapboxgl.Popup()
                         .setLngLat(coordinates)
                         .setHTML(`
-                            <div class="p-2 max-w-xs text-black">
-                                ${props.image_url ? `<img src="${props.image_url}" class="w-full h-32 object-cover rounded mb-2" />` : ''}
-                                <h3 class="font-bold text-sm mb-1">${props.title}</h3>
-                                <div class="text-lg font-bold text-green-600 mb-1">
-                                    ${new Intl.NumberFormat('de-DE').format(props.price)} ${props.currency}
+                            <div class="p-0 max-w-xs text-black w-64">
+                                ${props.image_url ? `<div class="relative w-full h-32"><img src="${props.image_url}" class="w-full h-full object-cover rounded-t" /></div>` : ''}
+                                <div class="p-3">
+                                    <h3 class="font-bold text-sm mb-1 leading-tight line-clamp-2">${props.title}</h3>
+                                    <div class="text-xl font-bold text-green-600 mb-1">
+                                        ${priceFormatted} ${props.currency}
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-2">
+                                        <div><span class="font-semibold text-gray-700">${props.size_m2}</span> m²</div>
+                                        <div><span class="font-semibold text-gray-700">${(props.price / props.size_m2).toFixed(0)}</span> ${props.currency}/m²</div>
+                                        <div><span class="font-semibold text-gray-700">${props.rooms || '?'}</span> Rooms</div>
+                                        <div><span class="font-semibold text-gray-700">${props.bathrooms || '?'}</span> Baths</div>
+                                    </div>
+                                    ${chartPlaceholder}
+                                    <a href="${props.url}" target="_blank" class="mt-3 block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs py-2 px-3 rounded transition-colors">
+                                        View on Idealista
+                                    </a>
                                 </div>
-                                <div class="text-xs text-gray-500 mb-2">
-                                    ${props.size_m2} m² • ${(props.price / props.size_m2).toFixed(0)} ${props.currency}/m²
-                                </div>
-                                <a href="${props.url}" target="_blank" class="block w-full text-center bg-blue-600 text-white text-xs py-1 px-2 rounded hover:bg-blue-700">
-                                    View on Idealista
-                                </a>
                             </div>
                         `)
                         .addTo(map.current!);
@@ -191,10 +223,11 @@ export default function MapComponent() {
         };
     }, []);
 
-    // 3. Update Map Data when properties change
+    // 3. Update Map Data when properties change OR map is ready
     useEffect(() => {
-        if (!map.current || !map.current.getSource('properties')) return;
-        if (properties.length === 0) return;
+        if (!map.current || !mapLoaded || !map.current.getSource('properties')) return;
+
+        console.log(`Updating map data. Properties: ${properties.length}, MapLoaded: ${mapLoaded}`);
 
         const features = properties
             .map(p => {
@@ -215,7 +248,7 @@ export default function MapComponent() {
                 }
 
                 if (lng === undefined || lat === undefined) {
-                    console.warn(`Property ${p.id} skipped: No valid location.`, p);
+                    // console.warn(`Property ${p.id} skipped: No valid location.`, p);
                     return null;
                 }
 
@@ -228,6 +261,8 @@ export default function MapComponent() {
                         price: p.price,
                         currency: p.currency,
                         size_m2: p.size_m2,
+                        rooms: p.rooms,
+                        bathrooms: p.bathrooms,
                         url: p.url,
                         image_url: p.image_url
                     }
@@ -241,10 +276,11 @@ export default function MapComponent() {
                 type: 'FeatureCollection',
                 features: features as any
             });
-            console.log("Updated map with features:", features.length);
+            console.log("Updated map source with features:", features.length);
 
-            // Auto-zoom to fit all points
-            if (features.length > 0) {
+            // Auto-zoom to fit all points (only on first large load if zoom is default)
+            // Removing strict constraints to avoid jarring jumps on every update
+            if (features.length > 0 && zoom === 12) {
                 const bounds = new mapboxgl.LngLatBounds();
                 features.forEach((feature: any) => {
                     bounds.extend(feature.geometry.coordinates);
@@ -258,7 +294,7 @@ export default function MapComponent() {
             }
         }
 
-    }, [properties]);
+    }, [properties, mapLoaded]);
 
     // Simple check without return logic to avoid rendering errors
     const isTokenMissing = !mapboxgl.accessToken;
