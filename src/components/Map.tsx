@@ -214,7 +214,10 @@ export default function MapComponent() {
                     lat = p.location.coordinates[1];
                 }
 
-                if (lng === undefined || lat === undefined) return null;
+                if (lng === undefined || lat === undefined) {
+                    console.warn(`Property ${p.id} skipped: No valid location.`, p);
+                    return null;
+                }
 
                 return {
                     type: 'Feature',
