@@ -5,10 +5,13 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/lib/supabase';
 
-// Ensure you set your token in .env.local
-// NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Ijoi...
-
-
+// 1. Get and sanitize token at MODULE LEVEL (synchronously)
+// This ensures the token is set before any component rendering occurs.
+let token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+if (token.startsWith('pk.pk.')) {
+    token = token.substring(3);
+}
+mapboxgl.accessToken = token;
 
 export default function MapComponent() {
     const mapContainer = useRef<HTMLDivElement>(null);
@@ -42,21 +45,14 @@ export default function MapComponent() {
         if (map.current) return; // initialize map only once
         if (!mapContainer.current) return;
 
-        // 1. Get and sanitize token
-        let token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
-        if (token.startsWith('pk.pk.')) {
-            console.warn("Found double 'pk.' prefix in token, fixing...");
-            token = token.substring(3);
-        }
-        mapboxgl.accessToken = token;
-
+        // Double check token existence (though it should be set globally now)
         if (!mapboxgl.accessToken) {
             console.error("Mapbox Access Token is missing");
             setErrorMsg("Mapbox Token is missing in .env.local");
             return;
         }
 
-        console.log("Initializing Mapbox with token:", token.substring(0, 8) + "...");
+        console.log("Initializing Mapbox with token:", mapboxgl.accessToken.substring(0, 8) + "...");
 
         try {
             map.current = new mapboxgl.Map({
@@ -232,15 +228,21 @@ export default function MapComponent() {
 
     }, [properties]);
 
-    if (!mapboxgl.accessToken) {
-        return <div className="p-10 text-red-500">Error: Mapbox Token Missing</div>;
-    }
+    // Simple check without return logic to avoid rendering errors
+    const isTokenMissing = !mapboxgl.accessToken;
 
     return (
         <div className="relative w-full h-full">
             <div className="absolute top-0 left-0 m-4 p-2 bg-black/70 text-white backdrop-blur rounded shadow z-10 font-mono text-xs">
                 Loaded: {properties.length} | Token: {mapboxgl.accessToken ? mapboxgl.accessToken.substring(0, 8) + '...' : 'MISSING'}
             </div>
+
+            {isTokenMissing && (
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white p-4 rounded shadow-lg z-50">
+                    Error: Mapbox Token Missing in .env.local
+                </div>
+            )}
+
             {errorMsg && (
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-600 text-white p-4 rounded shadow-lg z-50 max-w-sm break-words">
                     {errorMsg}
