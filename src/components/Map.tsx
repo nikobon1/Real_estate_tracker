@@ -33,6 +33,9 @@ export default function MapComponent() {
                 console.error("Error fetching properties:", error);
             } else {
                 console.log("Fetched properties:", data?.length);
+                if (data && data.length > 0) {
+                    console.log("First property sample (check location format):", data[0]);
+                }
                 setProperties(data || []);
             }
         };
@@ -194,12 +197,24 @@ export default function MapComponent() {
         if (properties.length === 0) return;
 
         const features = properties
-            .filter(p => p.location && p.location.startsWith('POINT'))
             .map(p => {
-                const matches = p.location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                if (!matches) return null;
-                const lng = parseFloat(matches[1]);
-                const lat = parseFloat(matches[2]);
+                let lng, lat;
+
+                // Handle WKT string: "POINT(-9.15 38.71)"
+                if (typeof p.location === 'string' && p.location.startsWith('POINT')) {
+                    const matches = p.location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+                    if (matches) {
+                        lng = parseFloat(matches[1]);
+                        lat = parseFloat(matches[2]);
+                    }
+                }
+                // Handle GeoJSON format (Supabase might return this)
+                else if (typeof p.location === 'object' && p.location !== null && p.location.coordinates) {
+                    lng = p.location.coordinates[0];
+                    lat = p.location.coordinates[1];
+                }
+
+                if (lng === undefined || lat === undefined) return null;
 
                 return {
                     type: 'Feature',
