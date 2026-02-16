@@ -52,12 +52,18 @@ export async function POST(request: Request) {
             const getField = (...keys: string[]) => {
                 const itemAny = item as any;
                 for (const key of keys) {
+                    // Direct access
                     if (itemAny[key] !== undefined && itemAny[key] !== null) return itemAny[key];
-                    // Support basic dot notation for one level deep (e.g. "basicInfo.title")
+
+                    // Dot notation support (up to 3 levels: parent.child.subchild)
                     if (key.includes('.')) {
-                        const [parent, child, subchild] = key.split('.');
-                        if (subchild && itemAny[parent]?.[child]?.[subchild] !== undefined) return itemAny[parent][child][subchild];
-                        if (itemAny[parent] && itemAny[parent][child] !== undefined) return itemAny[parent][child];
+                        const parts = key.split('.');
+                        let current = itemAny;
+                        for (let i = 0; i < parts.length; i++) {
+                            if (current === undefined || current === null) break;
+                            current = current[parts[i]];
+                        }
+                        if (current !== undefined && current !== null) return current;
                     }
                 }
                 return null;
@@ -83,9 +89,18 @@ export async function POST(request: Request) {
             }
 
             // Calculate derived values before returning object
-            const price = Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount')) || 0;
+            const price = Number(getField('price', 'priceInfo.amount', 'priceInfo.price.amount', 'amount')) || 0;
             const priceByArea = Number(getField('priceByArea', 'priceInfo.priceByArea', 'detail.priceByArea')) || 0;
-            let sizeM2 = Number(getField('size', 'builtArea', 'basicInfo.builtArea', 'moreCharacteristics.constructedArea', 'moreCharacteristics.usableArea')) || 0;
+
+            // Prioritize 'constructedArea' and 'usableArea' from 'moreCharacteristics' or 'basicInfo'
+            let sizeM2 = Number(getField(
+                'size',
+                'moreCharacteristics.constructedArea',
+                'moreCharacteristics.usableArea',
+                'basicInfo.builtArea',
+                'builtArea',
+                'constructedArea'
+            )) || 0;
 
             // Fallback: Calculate size from price and price/m2 if size is missing
             if (sizeM2 === 0 && price > 0 && priceByArea > 0) {
