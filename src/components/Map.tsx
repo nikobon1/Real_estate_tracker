@@ -396,10 +396,10 @@ export default function MapComponent() {
         if (visibleCategories.expensive) filters.push(['>=', ['get', 'price_per_m2'], 5000]);
         if (visibleCategories.unknown) filters.push(['==', ['get', 'size_m2'], 0]);
 
-        // If nothing selected, show nothing (filters has only 'any')
+        // If nothing selected, filters will be ['any'] which evaluates to false (hiding everything)
         // We combine with existing filter: ['!', ['has', 'point_count']]
 
-        const finalFilter = ['all', ['!', ['has', 'point_count']], filters.length > 1 ? filters : false];
+        const finalFilter = ['all', ['!', ['has', 'point_count']], filters];
 
         map.current.setFilter('unclustered-point', finalFilter);
 
