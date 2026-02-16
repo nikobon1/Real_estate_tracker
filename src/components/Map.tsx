@@ -378,6 +378,37 @@ export default function MapComponent() {
 
     }, [properties, mapLoaded]);
 
+    const [visibleCategories, setVisibleCategories] = useState({
+        cheap: true,
+        medium: true,
+        expensive: true,
+        unknown: true
+    });
+
+    // 4. Update Map Filter based on visibleCategories
+    useEffect(() => {
+        if (!map.current || !mapLoaded || !map.current.getLayer('unclustered-point')) return;
+
+        const filters: any[] = ['any'];
+
+        if (visibleCategories.cheap) filters.push(['<', ['get', 'price_per_m2'], 3000]);
+        if (visibleCategories.medium) filters.push(['all', ['>=', ['get', 'price_per_m2'], 3000], ['<', ['get', 'price_per_m2'], 5000]]);
+        if (visibleCategories.expensive) filters.push(['>=', ['get', 'price_per_m2'], 5000]);
+        if (visibleCategories.unknown) filters.push(['==', ['get', 'size_m2'], 0]);
+
+        // If nothing selected, show nothing (filters has only 'any')
+        // We combine with existing filter: ['!', ['has', 'point_count']]
+
+        const finalFilter = ['all', ['!', ['has', 'point_count']], filters.length > 1 ? filters : false];
+
+        map.current.setFilter('unclustered-point', finalFilter);
+
+    }, [visibleCategories, mapLoaded]);
+
+    const toggleCategory = (category: keyof typeof visibleCategories) => {
+        setVisibleCategories(prev => ({ ...prev, [category]: !prev[category] }));
+    };
+
     // Simple check without return logic to avoid rendering errors
     const isTokenMissing = !mapboxgl.accessToken;
 
@@ -385,6 +416,41 @@ export default function MapComponent() {
         <div className="relative w-full h-screen">
             <div className="absolute top-0 left-0 m-4 p-2 bg-black/70 text-white backdrop-blur rounded shadow z-10 font-mono text-xs">
                 Loaded: {properties.length} | Token: {mapboxgl.accessToken ? mapboxgl.accessToken.substring(0, 8) + '...' : 'MISSING'}
+            </div>
+
+            {/* LEGEND & FILTERS */}
+            <div className="absolute bottom-8 left-4 bg-white/90 backdrop-blur p-3 rounded-lg shadow-lg z-10 border border-gray-200">
+                <h4 className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Price / m²</h4>
+                <div className="space-y-2">
+                    <div
+                        onClick={() => toggleCategory('cheap')}
+                        className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.cheap ? 'opacity-100' : 'opacity-40'}`}
+                    >
+                        <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm"></div>
+                        <span className="text-xs text-gray-700 font-medium">&lt; 3.000 €</span>
+                    </div>
+                    <div
+                        onClick={() => toggleCategory('medium')}
+                        className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.medium ? 'opacity-100' : 'opacity-40'}`}
+                    >
+                        <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-sm"></div>
+                        <span className="text-xs text-gray-700 font-medium">3.000 - 5.000 €</span>
+                    </div>
+                    <div
+                        onClick={() => toggleCategory('expensive')}
+                        className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.expensive ? 'opacity-100' : 'opacity-40'}`}
+                    >
+                        <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
+                        <span className="text-xs text-gray-700 font-medium">&gt; 5.000 €</span>
+                    </div>
+                    <div
+                        onClick={() => toggleCategory('unknown')}
+                        className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.unknown ? 'opacity-100' : 'opacity-40'}`}
+                    >
+                        <div className="w-3 h-3 rounded-full bg-gray-400 shadow-sm"></div>
+                        <span className="text-xs text-gray-700 font-medium">N/A (Unknown)</span>
+                    </div>
+                </div>
             </div>
 
             {isTokenMissing && (
