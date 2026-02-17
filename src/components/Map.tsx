@@ -186,7 +186,6 @@ export default function MapComponent() {
                     }
 
                     // Always add current price as the last point if not present (or simply use history + current)
-                    // For now, let's assume history contains all we need. If empty, we use current price.
                     if (history.length === 0) {
                         history.push({ price: props.price, recorded_at: new Date().toISOString() });
                     }
@@ -199,7 +198,6 @@ export default function MapComponent() {
                     const minPrice = Math.min(...prices);
                     const maxPrice = Math.max(...prices);
                     const range = maxPrice - minPrice;
-                    // If flat line (range 0), use a default height of 50%.
 
                     const bars = history.map((h: any, index: number) => {
                         const date = new Date(h.recorded_at);
@@ -301,7 +299,6 @@ export default function MapComponent() {
             .map(p => {
                 let lng, lat;
 
-                // Handle WKT string: "POINT(-9.15 38.71)"
                 if (typeof p.location === 'string' && p.location.startsWith('POINT')) {
                     const matches = p.location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
                     if (matches) {
@@ -309,14 +306,12 @@ export default function MapComponent() {
                         lat = parseFloat(matches[2]);
                     }
                 }
-                // Handle GeoJSON format (Supabase might return this)
                 else if (typeof p.location === 'object' && p.location !== null && p.location.coordinates) {
                     lng = p.location.coordinates[0];
                     lat = p.location.coordinates[1];
                 }
 
                 if (lng === undefined || lat === undefined) {
-                    // console.warn(`Property ${p.id} skipped: No valid location.`, p);
                     return null;
                 }
 
@@ -334,7 +329,6 @@ export default function MapComponent() {
                         bathrooms: p.bathrooms,
                         url: p.url,
                         image_url: p.image_url,
-                        // Serialize price history to pass it through Mapbox properties (which only support scalar types efficiently, but text is fine)
                         price_history_json: JSON.stringify(p.price_history || [])
                     }
                 };
@@ -347,10 +341,7 @@ export default function MapComponent() {
                 type: 'FeatureCollection',
                 features: features as any
             });
-            console.log("Updated map source with features:", features.length);
 
-            // Auto-zoom to fit all points (only on first large load if zoom is default)
-            // Removing strict constraints to avoid jarring jumps on every update
             if (features.length > 0 && zoom === 12) {
                 const bounds = new mapboxgl.LngLatBounds();
                 features.forEach((feature: any) => {
@@ -360,12 +351,11 @@ export default function MapComponent() {
                 map.current.fitBounds(bounds, {
                     padding: 50,
                     maxZoom: 14,
-                    duration: 1000 // smooth animation
+                    duration: 1000
                 });
             }
         }
 
-        // Force update layer style to ensure color coding applies even if map init didn't re-run (HMR fix)
         if (map.current.getLayer('unclustered-point')) {
             map.current.setPaintProperty('unclustered-point', 'circle-color', [
                 'case',
@@ -385,31 +375,59 @@ export default function MapComponent() {
         unknown: true
     });
 
-    // 4. Update Map Filter based on visibleCategories
+    // Area Filter State
+    const [sizeRange, setSizeRange] = useState<[number, number]>([0, 500]);
+    const [maxSizeAvailable, setMaxSizeAvailable] = useState(500);
+
+    // Update max size based on data
+    useEffect(() => {
+        if (properties.length > 0) {
+            const sizes = properties.map(p => p.size_m2 || 0);
+            const max = Math.ceil(Math.max(...sizes) / 10) * 10;
+            if (max > maxSizeAvailable) {
+                setMaxSizeAvailable(max);
+                setSizeRange([0, max]);
+            }
+        }
+    }, [properties.length]);
+
+    // 4. Update Map Filter based on visibleCategories AND Size
     useEffect(() => {
         if (!map.current || !mapLoaded || !map.current.getLayer('unclustered-point')) return;
 
-        const filters: any[] = ['any'];
+        const categoryFilters: any[] = ['any'];
 
-        if (visibleCategories.cheap) filters.push(['<', ['get', 'price_per_m2'], 3000]);
-        if (visibleCategories.medium) filters.push(['all', ['>=', ['get', 'price_per_m2'], 3000], ['<', ['get', 'price_per_m2'], 5000]]);
-        if (visibleCategories.expensive) filters.push(['>=', ['get', 'price_per_m2'], 5000]);
-        if (visibleCategories.unknown) filters.push(['==', ['get', 'size_m2'], 0]);
+        if (visibleCategories.cheap) categoryFilters.push(['<', ['get', 'price_per_m2'], 3000]);
+        if (visibleCategories.medium) categoryFilters.push(['all', ['>=', ['get', 'price_per_m2'], 3000], ['<', ['get', 'price_per_m2'], 5000]]);
+        if (visibleCategories.expensive) categoryFilters.push(['>=', ['get', 'price_per_m2'], 5000]);
+        if (visibleCategories.unknown) categoryFilters.push(['==', ['get', 'size_m2'], 0]);
 
-        // If nothing selected, filters will be ['any'] which evaluates to false (hiding everything)
-        // We combine with existing filter: ['!', ['has', 'point_count']]
+        // Size Filter: (size >= min AND size <= max) OR (size == 0)
 
-        const finalFilter = ['all', ['!', ['has', 'point_count']], filters];
+        const sizeFilter = ['any',
+            ['==', ['get', 'size_m2'], 0], // Always allow 0 size items to pass THIS filter
+            ['all',
+                ['>=', ['get', 'size_m2'], sizeRange[0]],
+                ['<=', ['get', 'size_m2'], sizeRange[1]]
+            ]
+        ];
+
+        // Combine: (Category Match) AND (Size Match)
+
+        const finalFilter = ['all',
+            ['!', ['has', 'point_count']],
+            categoryFilters,
+            sizeFilter
+        ] as any;
 
         map.current.setFilter('unclustered-point', finalFilter);
 
-    }, [visibleCategories, mapLoaded]);
+    }, [visibleCategories, sizeRange, mapLoaded]);
 
     const toggleCategory = (category: keyof typeof visibleCategories) => {
         setVisibleCategories(prev => ({ ...prev, [category]: !prev[category] }));
     };
 
-    // Simple check without return logic to avoid rendering errors
     const isTokenMissing = !mapboxgl.accessToken;
 
     return (
@@ -419,36 +437,111 @@ export default function MapComponent() {
             </div>
 
             {/* LEGEND & FILTERS */}
-            <div className="absolute bottom-8 left-4 bg-white/90 backdrop-blur p-3 rounded-lg shadow-lg z-10 border border-gray-200">
-                <h4 className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Price / m²</h4>
-                <div className="space-y-2">
+            <div className="absolute bottom-8 left-4 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg z-10 border border-gray-200 w-64">
+                <h4 className="text-xs font-bold text-gray-700 mb-3 uppercase tracking-wide border-b border-gray-100 pb-2">Filters</h4>
+
+                {/* Price Categories */}
+                <div className="space-y-2 mb-4">
                     <div
                         onClick={() => toggleCategory('cheap')}
                         className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.cheap ? 'opacity-100' : 'opacity-40'}`}
                     >
                         <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm"></div>
-                        <span className="text-xs text-gray-700 font-medium">&lt; 3.000 €</span>
+                        <span className="text-xs text-gray-700 font-medium flex-1">&lt; 3.000 €/m²</span>
                     </div>
                     <div
                         onClick={() => toggleCategory('medium')}
                         className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.medium ? 'opacity-100' : 'opacity-40'}`}
                     >
                         <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-sm"></div>
-                        <span className="text-xs text-gray-700 font-medium">3.000 - 5.000 €</span>
+                        <span className="text-xs text-gray-700 font-medium flex-1">3k - 5k €/m²</span>
                     </div>
                     <div
                         onClick={() => toggleCategory('expensive')}
                         className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.expensive ? 'opacity-100' : 'opacity-40'}`}
                     >
                         <div className="w-3 h-3 rounded-full bg-red-500 shadow-sm"></div>
-                        <span className="text-xs text-gray-700 font-medium">&gt; 5.000 €</span>
+                        <span className="text-xs text-gray-700 font-medium flex-1">&gt; 5.000 €/m²</span>
                     </div>
                     <div
                         onClick={() => toggleCategory('unknown')}
                         className={`flex items-center gap-2 cursor-pointer transition-opacity ${visibleCategories.unknown ? 'opacity-100' : 'opacity-40'}`}
                     >
                         <div className="w-3 h-3 rounded-full bg-gray-400 shadow-sm"></div>
-                        <span className="text-xs text-gray-700 font-medium">N/A (Unknown)</span>
+                        <span className="text-xs text-gray-700 font-medium flex-1">Unknown Size</span>
+                    </div>
+                </div>
+
+                {/* Area Slider */}
+                <div className="pt-2 border-t border-gray-100">
+                    <div className="flex justify-between text-[10px] text-gray-500 mb-1 uppercase tracking-wider font-semibold">
+                        <span>Area (m²)</span>
+                        <span>{sizeRange[0]} - {sizeRange[1]} m²</span>
+                    </div>
+
+                    <div className="relative h-8 mt-2">
+                        {/* Custom Slider UI using basic HTML range inputs */}
+                        <style jsx>{`
+                            input[type=range]::-webkit-slider-thumb {
+                                pointer-events: all;
+                                width: 14px;
+                                height: 14px;
+                                -webkit-appearance: none;
+                                background: #3b82f6;
+                                border-radius: 50%;
+                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                                cursor: pointer;
+                                margin-top: -6px;
+                            }
+                            input[type=range]::-moz-range-thumb {
+                                pointer-events: all;
+                                width: 14px;
+                                height: 14px;
+                                background: #3b82f6;
+                                border-radius: 50%;
+                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                                cursor: pointer;
+                                border: none;
+                            }
+                        `}</style>
+
+                        {/* Track Background */}
+                        <div className="absolute top-1/2 left-0 right-0 h-1 bg-gray-200 rounded -translate-y-1/2"></div>
+
+                        {/* Active Track */}
+                        <div
+                            className="absolute top-1/2 h-1 bg-blue-400 rounded -translate-y-1/2"
+                            style={{
+                                left: `${(sizeRange[0] / maxSizeAvailable) * 100}%`,
+                                right: `${100 - (sizeRange[1] / maxSizeAvailable) * 100}%`
+                            }}
+                        ></div>
+
+                        {/* Min Thumb */}
+                        <input
+                            type="range"
+                            min="0"
+                            max={maxSizeAvailable}
+                            value={sizeRange[0]}
+                            onChange={(e) => {
+                                const val = Math.min(Number(e.target.value), sizeRange[1] - 1);
+                                setSizeRange([val, sizeRange[1]]);
+                            }}
+                            className="absolute top-0 left-0 w-full h-1 appearance-none bg-transparent pointer-events-none focus:outline-none z-20"
+                        />
+
+                        {/* Max Thumb */}
+                        <input
+                            type="range"
+                            min="0"
+                            max={maxSizeAvailable}
+                            value={sizeRange[1]}
+                            onChange={(e) => {
+                                const val = Math.max(Number(e.target.value), sizeRange[0] + 1);
+                                setSizeRange([sizeRange[0], val]);
+                            }}
+                            className="absolute top-0 left-0 w-full h-1 appearance-none bg-transparent pointer-events-none focus:outline-none z-30"
+                        />
                     </div>
                 </div>
             </div>
