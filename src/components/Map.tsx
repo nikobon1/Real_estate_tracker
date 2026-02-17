@@ -6,7 +6,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/lib/supabase';
 
 // 1. Get and sanitize token at MODULE LEVEL (synchronously)
-// This ensures the token is set before any component rendering occurs.
 let token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 if (token.startsWith('pk.pk.')) {
     token = token.substring(3);
@@ -23,6 +22,18 @@ export default function MapComponent() {
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const [mapLoaded, setMapLoaded] = useState(false);
+
+    // Filters State
+    const [visibleCategories, setVisibleCategories] = useState({
+        cheap: true,
+        medium: true,
+        expensive: true,
+        unknown: true
+    });
+
+    // Area Filter State
+    const [sizeRange, setSizeRange] = useState<[number, number]>([0, 500]);
+    const [maxSizeAvailable, setMaxSizeAvailable] = useState(500);
 
     // 1. Fetch properties from Supabase
     useEffect(() => {
@@ -41,9 +52,6 @@ export default function MapComponent() {
                 console.error("Error fetching properties:", error);
             } else {
                 console.log("Fetched properties:", data?.length);
-                if (data && data.length > 0) {
-                    console.log("First property sample (check location format):", data[0]);
-                }
                 setProperties(data || []);
             }
         };
@@ -53,22 +61,19 @@ export default function MapComponent() {
 
     // 2. Initialize Mapbox
     useEffect(() => {
-        if (map.current) return; // initialize map only once
+        if (map.current) return;
         if (!mapContainer.current) return;
 
-        // Double check token existence (though it should be set globally now)
         if (!mapboxgl.accessToken) {
             console.error("Mapbox Access Token is missing");
             setErrorMsg("Mapbox Token is missing in .env.local");
             return;
         }
 
-        console.log("Initializing Mapbox with token:", mapboxgl.accessToken.substring(0, 8) + "...");
-
         try {
             map.current = new mapboxgl.Map({
                 container: mapContainer.current,
-                style: 'mapbox://styles/mapbox/streets-v11', // changed to standard style for reliability
+                style: 'mapbox://styles/mapbox/streets-v11',
                 center: [lng, lat],
                 zoom: zoom,
                 attributionControl: false
@@ -83,9 +88,8 @@ export default function MapComponent() {
 
             map.current.on('load', () => {
                 if (!map.current) return;
-                setMapLoaded(true); // Signal that map is ready
+                setMapLoaded(true);
 
-                // Add empty source first
                 map.current.addSource('properties', {
                     type: 'geojson',
                     data: { type: 'FeatureCollection', features: [] },
@@ -139,7 +143,7 @@ export default function MapComponent() {
                     }
                 });
 
-                // Click on Cluster -> Zoom
+                // Events
                 map.current.on('click', 'clusters', (e) => {
                     const features = map.current?.queryRenderedFeatures(e.point, { layers: ['clusters'] });
                     const clusterId = features?.[0].properties?.cluster_id;
@@ -155,7 +159,6 @@ export default function MapComponent() {
                     );
                 });
 
-                // Click on Point -> Popup
                 map.current.on('click', 'unclustered-point', (e) => {
                     if (!e.features || !e.features[0]) return;
                     const feature = e.features[0];
@@ -166,34 +169,23 @@ export default function MapComponent() {
                         coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
                     }
 
-                    // Price formatting
                     const priceFormatted = new Intl.NumberFormat('de-DE').format(props.price);
-
-                    // Logic for Size display
                     const size = props.size_m2;
                     const sizeDisplay = size > 0 ? `${size} m²` : `<span class="text-gray-400 italic">N/A</span>`;
                     const pricePerM2Display = size > 0
                         ? `${(props.price / size).toFixed(0)} ${props.currency}/m²`
                         : ``;
 
-                    // --- GENERATE PRICE HISTORY CHART ---
+                    // Chart Logic
                     let chartHtml = '';
                     let history = [];
                     try {
                         history = JSON.parse(props.price_history_json || '[]');
-                    } catch (e) {
-                        console.error("Error parsing price history", e);
-                    }
+                    } catch (e) { console.error(e); }
 
-                    // Always add current price as the last point if not present (or simply use history + current)
-                    if (history.length === 0) {
-                        history.push({ price: props.price, recorded_at: new Date().toISOString() });
-                    }
-
-                    // Sort by date
+                    if (history.length === 0) history.push({ price: props.price, recorded_at: new Date().toISOString() });
                     history.sort((a: any, b: any) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
 
-                    // Find Min/Max for dynamic scaling
                     const prices = history.map((h: any) => h.price);
                     const minPrice = Math.min(...prices);
                     const maxPrice = Math.max(...prices);
@@ -204,14 +196,9 @@ export default function MapComponent() {
                         const dateStr = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
                         const priceStr = new Intl.NumberFormat('de-DE', { notation: "compact", maximumFractionDigits: 1 }).format(h.price);
 
-                        // Calculate height percentage. 
-                        // Baseline 20% height + 80% * (val - min) / range
                         let heightPercent = 50;
-                        if (range > 0) {
-                            heightPercent = 20 + 70 * ((h.price - minPrice) / range);
-                        }
+                        if (range > 0) heightPercent = 20 + 70 * ((h.price - minPrice) / range);
 
-                        // Color logic: Green = current/latest, Gray = past
                         const isLast = index === history.length - 1;
                         const barColorClass = isLast ? 'bg-green-500' : 'bg-gray-300';
 
@@ -227,7 +214,6 @@ export default function MapComponent() {
                         `;
                     }).join('');
 
-
                     chartHtml = `
                         <div class="mt-3 pt-3 border-t border-gray-100">
                             <h4 class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Price History</h4>
@@ -237,11 +223,7 @@ export default function MapComponent() {
                         </div>
                     `;
 
-                    new mapboxgl.Popup({
-                        maxWidth: '400px', // Wider popup
-                        closeButton: true,
-                        closeOnClick: true
-                    })
+                    new mapboxgl.Popup({ maxWidth: '400px', closeButton: true, closeOnClick: true })
                         .setLngLat(coordinates)
                         .setHTML(`
                             <div class="p-0 text-black w-[300px] sm:w-[340px]">
@@ -257,9 +239,7 @@ export default function MapComponent() {
                                         <div class="flex items-center"><span class="font-bold mr-1 text-gray-800">${props.rooms || '--'}</span> Rooms</div>
                                         <div class="flex items-center"><span class="font-bold mr-1 text-gray-800">${props.bathrooms || '--'}</span> Baths</div>
                                     </div>
-                                    
                                     ${chartHtml}
-
                                     <a href="${props.url}" target="_blank" class="mt-4 block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-2.5 px-4 rounded-md transition-colors shadow-sm hover:shadow">
                                         View on Idealista
                                     </a>
@@ -269,7 +249,6 @@ export default function MapComponent() {
                         .addTo(map.current!);
                 });
 
-                // Hover effects
                 map.current.on('mouseenter', 'clusters', () => map.current!.getCanvas().style.cursor = 'pointer');
                 map.current.on('mouseleave', 'clusters', () => map.current!.getCanvas().style.cursor = '');
                 map.current.on('mouseenter', 'unclustered-point', () => map.current!.getCanvas().style.cursor = 'pointer');
@@ -289,31 +268,70 @@ export default function MapComponent() {
         };
     }, []);
 
-    // 3. Update Map Data when properties change OR map is ready
+    // 3. Update Max Size Available
+    useEffect(() => {
+        if (properties.length > 0) {
+            const sizes = properties.map(p => p.size_m2 || 0);
+            const max = Math.ceil(Math.max(...sizes) / 10) * 10;
+            if (max > maxSizeAvailable) {
+                setMaxSizeAvailable(max);
+                setSizeRange([0, max]);
+            }
+        }
+    }, [properties.length]);
+
+    // 4. Update Map Data with FILTERING logic
     useEffect(() => {
         if (!map.current || !mapLoaded || !map.current.getSource('properties')) return;
 
-        console.log(`Updating map data. Properties: ${properties.length}, MapLoaded: ${mapLoaded}`);
+        // --- FILTERING LOGIC START ---
 
-        const features = properties
+        // This runs locally on the valid properties result from Supabase
+        const filteredProperties = properties.filter(p => {
+            const size = p.size_m2 || 0;
+            const pricePerM2 = size > 0 ? p.price / size : 0;
+
+            // 1. Size Filter
+            // If it's a known size, check range.
+            // If it's 0 (unknown), pass it ONLY if we allow unknown. 
+            // BUT essentially: 
+            // - If size > 0, strict range check.
+            // - If size == 0, we treat it as valid for "size range" purposes? usually NO, it's outside any range.
+            //   However, if we want to show unknown sizes, we should only hide them if 'unknown' category is off.
+            if (size > 0) {
+                if (size < sizeRange[0] || size > sizeRange[1]) return false;
+            }
+
+            // 2. Category Filter
+            if (size === 0) {
+                if (!visibleCategories.unknown) return false;
+            } else {
+                if (pricePerM2 < 3000) {
+                    if (!visibleCategories.cheap) return false;
+                } else if (pricePerM2 < 5000) {
+                    if (!visibleCategories.medium) return false;
+                } else {
+                    if (!visibleCategories.expensive) return false;
+                }
+            }
+
+            return true;
+        });
+
+        // --- FILTERING LOGIC END ---
+
+        const features = filteredProperties
             .map(p => {
                 let lng, lat;
-
                 if (typeof p.location === 'string' && p.location.startsWith('POINT')) {
                     const matches = p.location.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-                    if (matches) {
-                        lng = parseFloat(matches[1]);
-                        lat = parseFloat(matches[2]);
-                    }
-                }
-                else if (typeof p.location === 'object' && p.location !== null && p.location.coordinates) {
+                    if (matches) { lng = parseFloat(matches[1]); lat = parseFloat(matches[2]); }
+                } else if (typeof p.location === 'object' && p.location !== null && p.location.coordinates) {
                     lng = p.location.coordinates[0];
                     lat = p.location.coordinates[1];
                 }
 
-                if (lng === undefined || lat === undefined) {
-                    return null;
-                }
+                if (lng === undefined || lat === undefined) return null;
 
                 return {
                     type: 'Feature',
@@ -342,87 +360,18 @@ export default function MapComponent() {
                 features: features as any
             });
 
-            if (features.length > 0 && zoom === 12) {
+            // Auto-zoom only on first substantial load
+            if (features.length > 0 && zoom === 12 && !mapContainer.current?.dataset.zoomed) {
+                // Mark as zoomed to prevent re-zooming on filter change
+                if (mapContainer.current) mapContainer.current.dataset.zoomed = "true";
+
                 const bounds = new mapboxgl.LngLatBounds();
-                features.forEach((feature: any) => {
-                    bounds.extend(feature.geometry.coordinates);
-                });
-
-                map.current.fitBounds(bounds, {
-                    padding: 50,
-                    maxZoom: 14,
-                    duration: 1000
-                });
+                features.forEach((feature: any) => bounds.extend(feature.geometry.coordinates));
+                map.current.fitBounds(bounds, { padding: 50, maxZoom: 14, duration: 1000 });
             }
         }
 
-        if (map.current.getLayer('unclustered-point')) {
-            map.current.setPaintProperty('unclustered-point', 'circle-color', [
-                'case',
-                ['==', ['get', 'size_m2'], 0], '#9ca3af',   // Grey (Unknown size)
-                ['<', ['get', 'price_per_m2'], 3000], '#22c55e', // Green (Cheap < 3k)
-                ['<', ['get', 'price_per_m2'], 5000], '#eab308', // Yellow (Medium 3k-5k)
-                '#ef4444' // Red (Expensive > 5k)
-            ]);
-        }
-
-    }, [properties, mapLoaded]);
-
-    const [visibleCategories, setVisibleCategories] = useState({
-        cheap: true,
-        medium: true,
-        expensive: true,
-        unknown: true
-    });
-
-    // Area Filter State
-    const [sizeRange, setSizeRange] = useState<[number, number]>([0, 500]);
-    const [maxSizeAvailable, setMaxSizeAvailable] = useState(500);
-
-    // Update max size based on data
-    useEffect(() => {
-        if (properties.length > 0) {
-            const sizes = properties.map(p => p.size_m2 || 0);
-            const max = Math.ceil(Math.max(...sizes) / 10) * 10;
-            if (max > maxSizeAvailable) {
-                setMaxSizeAvailable(max);
-                setSizeRange([0, max]);
-            }
-        }
-    }, [properties.length]);
-
-    // 4. Update Map Filter based on visibleCategories AND Size
-    useEffect(() => {
-        if (!map.current || !mapLoaded || !map.current.getLayer('unclustered-point')) return;
-
-        const categoryFilters: any[] = ['any'];
-
-        if (visibleCategories.cheap) categoryFilters.push(['<', ['get', 'price_per_m2'], 3000]);
-        if (visibleCategories.medium) categoryFilters.push(['all', ['>=', ['get', 'price_per_m2'], 3000], ['<', ['get', 'price_per_m2'], 5000]]);
-        if (visibleCategories.expensive) categoryFilters.push(['>=', ['get', 'price_per_m2'], 5000]);
-        if (visibleCategories.unknown) categoryFilters.push(['==', ['get', 'size_m2'], 0]);
-
-        // Size Filter: (size >= min AND size <= max) OR (size == 0)
-
-        const sizeFilter = ['any',
-            ['==', ['get', 'size_m2'], 0], // Always allow 0 size items to pass THIS filter
-            ['all',
-                ['>=', ['get', 'size_m2'], sizeRange[0]],
-                ['<=', ['get', 'size_m2'], sizeRange[1]]
-            ]
-        ];
-
-        // Combine: (Category Match) AND (Size Match)
-
-        const finalFilter = ['all',
-            ['!', ['has', 'point_count']],
-            categoryFilters,
-            sizeFilter
-        ] as any;
-
-        map.current.setFilter('unclustered-point', finalFilter);
-
-    }, [visibleCategories, sizeRange, mapLoaded]);
+    }, [properties, mapLoaded, visibleCategories, sizeRange]);
 
     const toggleCategory = (category: keyof typeof visibleCategories) => {
         setVisibleCategories(prev => ({ ...prev, [category]: !prev[category] }));
