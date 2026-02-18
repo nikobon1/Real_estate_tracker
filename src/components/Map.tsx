@@ -489,6 +489,31 @@ export default function MapComponent() {
             <div className="absolute bottom-8 left-4 bg-white/90 backdrop-blur p-4 rounded-lg shadow-lg z-10 border border-gray-200 w-64">
                 <h4 className="text-xs font-bold text-gray-700 mb-3 uppercase tracking-wide border-b border-gray-100 pb-2">Filters</h4>
 
+                {/* Shared Slider Thumb Styles */}
+                <style jsx>{`
+                    input[type=range]::-webkit-slider-thumb {
+                        pointer-events: all;
+                        width: 14px;
+                        height: 14px;
+                        -webkit-appearance: none;
+                        background: #3b82f6;
+                        border-radius: 50%;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                        cursor: pointer;
+                        margin-top: -6px;
+                    }
+                    input[type=range]::-moz-range-thumb {
+                        pointer-events: all;
+                        width: 14px;
+                        height: 14px;
+                        background: #3b82f6;
+                        border-radius: 50%;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                        cursor: pointer;
+                        border: none;
+                    }
+                `}</style>
+
                 {/* Total Price Slider */}
                 <div className="mb-4">
                     <div className="flex justify-between text-[10px] text-gray-500 mb-1 uppercase tracking-wider font-semibold">
@@ -579,31 +604,6 @@ export default function MapComponent() {
                     </div>
 
                     <div className="relative h-8 mt-2">
-                        {/* Custom Slider UI using basic HTML range inputs */}
-                        <style jsx>{`
-                            input[type=range]::-webkit-slider-thumb {
-                                pointer-events: all;
-                                width: 14px;
-                                height: 14px;
-                                -webkit-appearance: none;
-                                background: #3b82f6;
-                                border-radius: 50%;
-                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                                cursor: pointer;
-                                margin-top: -6px;
-                            }
-                            input[type=range]::-moz-range-thumb {
-                                pointer-events: all;
-                                width: 14px;
-                                height: 14px;
-                                background: #3b82f6;
-                                border-radius: 50%;
-                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                                cursor: pointer;
-                                border: none;
-                            }
-                        `}</style>
-
                         {/* Track Background */}
                         <div className="absolute top-1/2 left-0 right-0 h-1 bg-gray-200 rounded -translate-y-1/2"></div>
 
