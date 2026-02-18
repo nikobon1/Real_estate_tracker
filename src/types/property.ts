@@ -13,6 +13,7 @@ export type IdealistaProperty = {
     city?: string;
     url: string;
     thumbnail?: string;
+    constructionYear?: number;
 };
 
 export type DatabaseProperty = {
@@ -29,4 +30,5 @@ export type DatabaseProperty = {
     city: string | null;
     url: string;
     image_url: string | null;
+    year_built: number | null;
 };

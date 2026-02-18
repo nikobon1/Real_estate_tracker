@@ -121,6 +121,13 @@ export async function POST(request: Request) {
                 city: getField('municipality', 'city', 'address.location.level4') || null,
                 url: getField('url', 'detailWebLink', 'suggestedTexts.url') || '',
                 image_url: imageUrl,
+                year_built: Number(getField(
+                    'constructionYear',
+                    'moreCharacteristics.constructionYear',
+                    'buildYear',
+                    'yearBuilt',
+                    'basicInfo.constructionYear'
+                )) || null,
                 last_seen: new Date().toISOString(),
             };
         });
